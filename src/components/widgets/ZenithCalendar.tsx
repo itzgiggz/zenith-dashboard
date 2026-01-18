@@ -25,11 +25,13 @@ interface Event {
     calendarId: string;
     isAllDay?: boolean;
     holidayLabel?: string;
+    hasConflict?: boolean;
+    hidden?: boolean;
 }
 
 const CALENDAR_THEMES: Record<string, { bg: string; text: string; dot: string; border: string }> = {
     '1': { bg: 'bg-blue-600/50', text: 'text-blue-50', dot: 'bg-blue-300', border: 'border-blue-300/40' },     // Work
-    '2': { bg: 'bg-green-600/50', text: 'text-green-50', dot: 'bg-green-300', border: 'border-green-300/40' }, // Personal
+    '2': { bg: 'bg-green-700 shadow-xl shadow-black/50 z-20', text: 'text-white', dot: 'bg-green-300', border: 'border-green-400' }, // Personal (Opaque & Elevated)
     '3': { bg: 'bg-orange-600/50', text: 'text-orange-50', dot: 'bg-orange-300', border: 'border-orange-300/40' }, // Family
     '4': { bg: 'bg-yellow-600/50', text: 'text-yellow-50', dot: 'bg-yellow-300', border: 'border-yellow-300/40' }, // Holiday
     'default': { bg: 'bg-zinc-600/60', text: 'text-zinc-50', dot: 'bg-zinc-300', border: 'border-zinc-400/40' }
@@ -106,10 +108,46 @@ export default function ZenithCalendar() {
             mergedPrivate.push(current);
         }
 
-        return [...otherEvents, ...mergedPrivate].map(e => ({
-            ...e,
-            title: e.title === "Private Meeting" ? "Work" : e.title
-        }));
+        // 4. Overlap Logic: Personal vs Work
+        // We want Personal events to sit on top (done via sort/z-index styles).
+        // We also want to flag Personal events that overlap with Work.
+        // And HIDE work events that are fully contained by a Personal event to clean up clutter.
+
+        // Final lists before overlap check
+        let finalWork = [...mergedPrivate].map(e => ({ ...e, title: "Work" })); // Rename here
+        let finalPersonal = otherEvents.filter(e => e.calendarId === '2');
+        const finalOthers = otherEvents.filter(e => e.calendarId !== '2');
+
+        finalPersonal = finalPersonal.map(pEvent => {
+            const pStart = parseISO(pEvent.start);
+            const pEnd = pEvent.end ? parseISO(pEvent.end) : pStart;
+            let hasConflict = false;
+
+            // Check against all Work events
+            finalWork = finalWork.map(wEvent => {
+                const wStart = parseISO(wEvent.start);
+                const wEnd = wEvent.end ? parseISO(wEvent.end) : wStart;
+
+                // Check overlap
+                // Overlap if (StartA < EndB) and (EndA > StartB)
+                if (pStart < wEnd && pEnd > wStart) {
+                    hasConflict = true;
+
+                    // Check if Work event is FULLY contained in Personal event
+                    // wStart >= pStart && wEnd <= pEnd
+                    if (wStart >= pStart && wEnd <= pEnd) {
+                        return { ...wEvent, hidden: true };
+                    }
+                }
+                return wEvent;
+            });
+
+            return { ...pEvent, hasConflict };
+        });
+
+        // 5. Combine and Sort
+        // Order: Work (hidden/visible) -> Others -> Personal (Top Priority)
+        return [...finalWork, ...finalOthers, ...finalPersonal];
     };
 
     const fetchEvents = async () => {
@@ -250,6 +288,8 @@ export default function ZenithCalendar() {
                                 {/* Hourly Events Container */}
                                 <div className="flex-1 relative">
                                     {dayEvents.map((event) => {
+                                        if (event.hidden) return null; // Skip hidden events
+
                                         const theme = CALENDAR_THEMES[event.calendarId] || CALENDAR_THEMES.default;
                                         const top = calculatePosition(event.start);
                                         const height = calculateHeight(event.start, event.end);
@@ -276,6 +316,11 @@ export default function ZenithCalendar() {
                                                         {event.title}
                                                     </h4>
                                                 </div>
+                                                {event.hasConflict && (
+                                                    <div className="absolute bottom-1 right-2 px-1.5 py-0.5 bg-blue-500/90 rounded text-[8px] font-bold uppercase tracking-wider text-white shadow-sm z-30 flex items-center gap-1">
+                                                        <span>+ Work</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
