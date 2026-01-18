@@ -25,7 +25,7 @@ interface Event {
     calendarId: string;
     isAllDay?: boolean;
     holidayLabel?: string;
-    hasConflict?: boolean;
+    conflictLabel?: string;
     hidden?: boolean;
 }
 
@@ -134,7 +134,7 @@ export default function ZenithCalendar() {
         personalEvents = personalEvents.map(pEvent => {
             const pStart = parseISO(pEvent.start);
             const pEnd = pEvent.end ? parseISO(pEvent.end) : pStart;
-            let hasConflict = false;
+            let conflictLabel: string | undefined;
 
             // Check against ALL Work events (Generic + Named)
             allWork = allWork.map(wEvent => {
@@ -142,12 +142,17 @@ export default function ZenithCalendar() {
                 const wEnd = wEvent.end ? parseISO(wEvent.end) : wStart;
 
                 // Check overlap
-                // Overlap if (StartA < EndB) and (EndA > StartB)
                 if (pStart < wEnd && pEnd > wStart) {
-                    hasConflict = true;
+                    // Determine label: Prioritize "+OOO" if explicitly Out of Office
+                    const isOOO = wEvent.title.toLowerCase().includes("out of office");
+                    const newLabel = isOOO ? "+OOO" : "+ WORK";
+
+                    // If we don't have a label yet, OR if the new one is OOO (priority), update it
+                    if (!conflictLabel || newLabel === "+OOO") {
+                        conflictLabel = newLabel;
+                    }
 
                     // Check if Work event is FULLY contained in Personal event
-                    // wStart >= pStart && wEnd <= pEnd
                     if (wStart >= pStart && wEnd <= pEnd) {
                         return { ...wEvent, hidden: true };
                     }
@@ -155,7 +160,7 @@ export default function ZenithCalendar() {
                 return wEvent;
             });
 
-            return { ...pEvent, hasConflict };
+            return { ...pEvent, conflictLabel };
         });
 
         // 5. Combine and Sort
@@ -329,9 +334,9 @@ export default function ZenithCalendar() {
                                                         {event.title}
                                                     </h4>
                                                 </div>
-                                                {event.hasConflict && (
+                                                {event.conflictLabel && (
                                                     <div className="absolute bottom-1 right-2 px-1.5 py-0.5 bg-blue-500/90 rounded text-[8px] font-bold uppercase tracking-wider text-white shadow-sm z-30 flex items-center gap-1">
-                                                        <span>+ Work</span>
+                                                        <span>{event.conflictLabel}</span>
                                                     </div>
                                                 )}
                                             </div>
