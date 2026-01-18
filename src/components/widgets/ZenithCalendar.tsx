@@ -114,17 +114,30 @@ export default function ZenithCalendar() {
         // And HIDE work events that are fully contained by a Personal event to clean up clutter.
 
         // Final lists before overlap check
-        let finalWork = [...mergedPrivate].map(e => ({ ...e, title: "Work" })); // Rename here
-        let finalPersonal = otherEvents.filter(e => e.calendarId === '2');
-        const finalOthers = otherEvents.filter(e => e.calendarId !== '2');
+        // Group 1: Generic "Work" blocks (merged private meetings)
+        const genericWork = [...mergedPrivate].map(e => ({ ...e, title: "Work" }));
 
-        finalPersonal = finalPersonal.map(pEvent => {
+        // Group 2: Named Work events (calendarId '1' but NOT "Private Meeting")
+        // These sit in 'otherEvents' initially.
+        const namedWork = otherEvents.filter(e => e.calendarId === '1');
+
+        // Group 3: Personal Events (Calendar 2)
+        let personalEvents = otherEvents.filter(e => e.calendarId === '2');
+
+        // Group 4: Truly other events (Family, Holiday, etc. - NOT Work or Personal)
+        const trulyOthers = otherEvents.filter(e => e.calendarId !== '1' && e.calendarId !== '2');
+
+        // Combine all work-related events for conflict checking
+        // We map them so we can modify their 'hidden' state
+        let allWork = [...genericWork, ...namedWork];
+
+        personalEvents = personalEvents.map(pEvent => {
             const pStart = parseISO(pEvent.start);
             const pEnd = pEvent.end ? parseISO(pEvent.end) : pStart;
             let hasConflict = false;
 
-            // Check against all Work events
-            finalWork = finalWork.map(wEvent => {
+            // Check against ALL Work events (Generic + Named)
+            allWork = allWork.map(wEvent => {
                 const wStart = parseISO(wEvent.start);
                 const wEnd = wEvent.end ? parseISO(wEvent.end) : wStart;
 
@@ -146,8 +159,8 @@ export default function ZenithCalendar() {
         });
 
         // 5. Combine and Sort
-        // Order: Work (hidden/visible) -> Others -> Personal (Top Priority)
-        return [...finalWork, ...finalOthers, ...finalPersonal];
+        // Order: All Work (hidden/visible) -> Others -> Personal (Top Priority)
+        return [...allWork, ...trulyOthers, ...personalEvents];
     };
 
     const fetchEvents = async () => {
