@@ -106,7 +106,10 @@ export default function ZenithCalendar() {
             mergedPrivate.push(current);
         }
 
-        return [...otherEvents, ...mergedPrivate];
+        return [...otherEvents, ...mergedPrivate].map(e => ({
+            ...e,
+            title: e.title === "Private Meeting" ? "Work" : e.title
+        }));
     };
 
     const fetchEvents = async () => {
@@ -122,7 +125,7 @@ export default function ZenithCalendar() {
 
     useEffect(() => {
         fetchEvents();
-        const interval = setInterval(fetchEvents, 300000); // 5 mins
+        const interval = setInterval(fetchEvents, 900000); // 15 mins
         return () => clearInterval(interval);
     }, []);
 
@@ -265,8 +268,8 @@ export default function ZenithCalendar() {
                                                     minHeight: '28px'
                                                 }}
                                             >
-                                                <div className="flex flex-col h-full">
-                                                    <span className={clsx("text-[9px] font-black uppercase tracking-tight leading-none mb-1 opacity-80", theme.text)}>
+                                                <div className="flex flex-row items-baseline gap-2 h-full">
+                                                    <span className={clsx("text-[9px] font-black uppercase tracking-tight leading-none opacity-80 whitespace-nowrap", theme.text)}>
                                                         {format(parseISO(event.start), 'h:mm')}
                                                     </span>
                                                     <h4 className={clsx("text-[11px] font-black leading-tight line-clamp-2 drop-shadow-sm", theme.text)}>
