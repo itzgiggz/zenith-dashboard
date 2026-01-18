@@ -9,7 +9,9 @@ import {
     eachDayOfInterval,
     isToday,
     startOfDay,
-    differenceInMinutes
+    differenceInMinutes,
+    getDay,
+    getHours
 } from 'date-fns';
 import { clsx } from 'clsx';
 import Clock from './Clock';
@@ -48,11 +50,71 @@ export default function ZenithCalendar() {
 
     const hours = useMemo(() => Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => START_HOUR + i), []);
 
+    const processEvents = (rawEvents: Event[]) => {
+        // 1. Filter out late night long meetings on Mon, Wed, Fri
+        const filtered = rawEvents.filter(event => {
+            const start = parseISO(event.start);
+            const end = event.end ? parseISO(event.end) : start;
+            const day = getDay(start); // 0=Sun, 1=Mon, ...
+            const hour = getHours(start);
+            const durationMinutes = differenceInMinutes(end, start);
+
+            // Target days: Mon(1), Wed(3), Fri(5)
+            const isTargetDay = [1, 3, 5].includes(day);
+            const isLateStart = hour >= 17; // 5 PM
+            const isLongDuration = durationMinutes > (4 * 60);
+
+            if (isTargetDay && isLateStart && isLongDuration) {
+                return false;
+            }
+            return true;
+        });
+
+        // 2. Separate Private Meetings vs Others
+        // We only merge "Private Meeting" events that are NOT all-day
+        const privateMeetings = filtered.filter(e => e.title === "Private Meeting" && !e.isAllDay);
+        const otherEvents = filtered.filter(e => e.title !== "Private Meeting" || e.isAllDay);
+
+        // 3. Merge Overlapping Private Meetings
+        privateMeetings.sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime());
+
+        const mergedPrivate: Event[] = [];
+        if (privateMeetings.length > 0) {
+            let current = privateMeetings[0];
+
+            for (let i = 1; i < privateMeetings.length; i++) {
+                const next = privateMeetings[i];
+                const currentStart = parseISO(current.start);
+                const currentEnd = current.end ? parseISO(current.end) : currentStart;
+                const nextStart = parseISO(next.start);
+                const nextEnd = next.end ? parseISO(next.end) : nextStart;
+
+                // Check for overlap
+                // Standard overlap: StartA < EndB && StartB < EndA
+                // Since we sorted by start, StartA <= StartB is guaranteed.
+                // So we just need to check if NextStart < CurrentEnd
+                if (nextStart < currentEnd) {
+                    // Overlap detected -> Merge
+                    const newEnd = currentEnd > nextEnd ? current.end : next.end;
+                    current = { ...current, end: newEnd };
+                } else {
+                    // No overlap, push current and move to next
+                    mergedPrivate.push(current);
+                    current = next;
+                }
+            }
+            mergedPrivate.push(current);
+        }
+
+        return [...otherEvents, ...mergedPrivate];
+    };
+
     const fetchEvents = async () => {
         try {
             const res = await fetch('/api/calendar');
             const data = await res.json();
-            setEvents(Array.isArray(data) ? data : (data.events || []));
+            const rawEvents = Array.isArray(data) ? data : (data.events || []);
+            setEvents(processEvents(rawEvents));
         } catch (error) {
             console.error('Failed to fetch calendar:', error);
         }
